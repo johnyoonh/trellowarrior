@@ -25,8 +25,9 @@ logger = logging.getLogger(__name__)
 
 
 class TwProject(object):
-    def __init__(self, tw_project_name, trello_board_name, trello_todo_list='To Do', trello_doing_list='Doing',
-                 trello_done_list='Done', tags_color=None):
+    def __init__(self, tw_project_name, trello_board_name, trello_todo_list='To Do',
+                 trello_doing_list='Doing', trello_done_list='Done', tags_color=None,
+                 is_assignee=False, filters_list=None):
         self.tw_project_name = tw_project_name
         self.trello_board_name = trello_board_name
         self.trello_todo_list = trello_todo_list
@@ -36,6 +37,11 @@ class TwProject(object):
             tags_color = []
         self.tags_color = tags_color
         self.trello_labels = {}
+        self.is_assignee = is_assignee
+        if not filters_list:
+            filters_list = []
+        self.filters_list = filters_list
+
 
     def is_valid(self):
         return self.tw_project_name is not None and self.trello_board_name is not None
@@ -68,6 +74,7 @@ class TrelloWarrior(object):
         self._trello_client = None
         self._trello_boards = None
         self._task_warrior = None
+        self._me = None
         self.delay_between_sync = None
         self.parse_config()
 
@@ -132,8 +139,20 @@ class TrelloWarrior(object):
                 tags_color = json.loads(conf.get(sync_project, 'tags_color'))
             else:
                 tags_color = None
+            is_assignee = False
+            if conf.has_option(sync_project, 'is_assignee'):
+                if conf.get(sync_project, 'is_assignee').lower() in ("yes", "true",
+                                                                     "t", "1"):
+                    is_assignee = True
+            if conf.has_option(sync_project, 'filters_list_csv'):
+                filters_list = conf.get(sync_project,
+                                                   'filters_list_csv').split(",")
+            else:
+                filters_list = None
+
             self.all_projects[sync_project] = TwProject(tw_project_name, trello_board_name, trello_todo_list,
-                                                        trello_doing_list, trello_done_list, tags_color)
+                                                        trello_doing_list, trello_done_list, tags_color,
+                                                        is_assignee, filters_list=filters_list)
         if conf.has_option('DEFAULT', 'trello_api_key'):
             self.trello_api_key = conf.get('DEFAULT', 'trello_api_key')
         if conf.has_option('DEFAULT', 'trello_api_secret'):
@@ -173,6 +192,8 @@ class TrelloWarrior(object):
             conf.set(project_name, 'trello_todo_list', project.trello_todo_list)
             conf.set(project_name, 'trello_doing_list', project.trello_doing_list)
             conf.set(project_name, 'trello_done_list', project.trello_done_list)
+            conf.set(project_name, 'filters_list_csv', ", ".join(project.filters_list))
+            conf.set(project_name, 'is_assignee', project.is_assignee)
             if project.tags_color:
                 conf.set(project_name, 'tags_color', json.dumps(project.tags_color))
         with open(self.config_file, 'w') as f:
@@ -199,6 +220,12 @@ class TrelloWarrior(object):
             self._trello_client = TrelloClient(api_key=self.trello_api_key, api_secret=self.trello_api_secret,
                                                token=self.trello_token, token_secret=self.trello_token_secret)
         return self._trello_client
+
+    @property
+    def me(self):
+        if self._me is None:
+            self._me = self.trello_client.get_member('me')
+        return self._me
 
     def invalid_trello_cache(self):
         """
@@ -285,14 +312,17 @@ class TrelloWarrior(object):
         board_cache['lists'].append(trello_list)
         return trello_list
 
-    def get_trello_dic_cards(self, board_name):
+    def get_trello_dic_cards(self, board_name, list_filter):
         """
         Returns a dic of lists with a set of card objects in each element for all lists in a board
 
         :board_name: the board name
         """
         trello_cards = {}
-        for trello_list in self.get_trello_board(board_name)['lists']:
+        trello_list_objects = self.get_trello_board(board_name)['lists']
+        if list_filter:
+            trello_list_objects = filter(lambda l: l.name in list_filter, trello_list_objects)
+        for trello_list in trello_list_objects:
             trello_cards[trello_list.name] = trello_list.list_cards()
         return trello_cards
 
@@ -308,6 +338,20 @@ class TrelloWarrior(object):
         except Exception:
             print('Cannot find Trello card with ID {0} deleted in Task Warrior. '
                   'Maybe you deleted it in Trello too.'.format(trello_card_id))
+
+    def close_trello_card(self, trello_card_id):
+        """
+        Delete (forever) a Trello Card by ID
+
+        :trello_card_id: Trello card ID
+        """
+        try:
+            trello_card = self.trello_client.get_card(trello_card_id)
+            trello_card.set_closed(True)
+        except Exception:
+            print('Cannot find Trello card with ID {0} deleted in Task Warrior. '
+                  'Maybe you deleted it in Trello too.'.format(trello_card_id))
+
 
     @staticmethod
     def upload_tw_task(tw_task, trello_list, project):
@@ -413,11 +457,12 @@ class TrelloWarrior(object):
         tw_deleted_tasks = self.task_warrior.tasks.filter(project=project.tw_project_name, status='deleted')
         for tw_deleted_task in tw_deleted_tasks:
             if tw_deleted_task['trelloid']:
-                self.delete_trello_card(tw_deleted_task['trelloid'])
+                self.close_trello_card(tw_deleted_task['trelloid'])
                 tw_deleted_task['trelloid'] = None
                 tw_deleted_task.save()
         # Compare and sync Trello with Task Warrior
-        trello_dic_cards = self.get_trello_dic_cards(project.trello_board_name)
+        trello_dic_cards = self.get_trello_dic_cards(project.trello_board_name,
+                                                     project.filters_list)
         trello_cards_ids = set()
         for list_name in trello_dic_cards:
             for trello_card in trello_dic_cards[list_name]:
@@ -429,6 +474,8 @@ class TrelloWarrior(object):
                     self.sync_task_card(tw_task, trello_card, project, list_name)
                 else:
                     # Download new Trello cards that not present in Task Warrior
+                    if project.is_assignee and self.me.id not in trello_card.member_ids:
+                        continue
                     self.download_trello_card(project, list_name, trello_card)
         # Compare Trello and TaskWarrior tasks for remove deleted Trello tasks in Task Warrior
         tw_pending_tasks_ids = set((task['trelloid'] for task in
@@ -590,7 +637,8 @@ class TrelloWarrior(object):
         self.write_config()
 
     def new_project(self, name, tw_project_name, trello_board_name, trello_todo_list='To Do', trello_doing_list='Doing',
-                    trello_done_list='Done', no_sync=False, tags_color=None):
+                    trello_done_list='Done', no_sync=False, tags_color=None,
+                    is_assignee=False, filters_list=None):
         """
         Add a new project to the config
 
@@ -608,7 +656,7 @@ class TrelloWarrior(object):
                 name, color = tag.split('=')
                 tags_color_dict[name] = color
         project = TwProject(tw_project_name, trello_board_name, trello_todo_list, trello_doing_list, trello_done_list,
-                            tags_color_dict)
+                            tags_color_dict, is_assignee=is_assignee, filters_list=filters_list)
         self.all_projects[name] = project
         if not no_sync:
             self.sync_projects.append(name)
@@ -657,7 +705,9 @@ def new_project(args):
             'todo', 'doing', 'done', 'no_sync'
     """
     tw = TrelloWarrior(config_file=args.config)
-    tw.new_project(args.name, args.tw_name, args.board_name, args.todo, args.doing, args.done, args.no_sync)
+    tw.new_project(args.name, args.tw_name, args.board_name, args.todo, args.doing,
+                   args.done, args.no_sync, args.tags_color, args.is_assignee,
+                   args.filters_list_csv.split(","))
 
 
 def main():
@@ -684,6 +734,12 @@ def main():
     new_parser.add_argument('--tags-color', help='Mapping between tags and color labels "tags1=color1,tags2=color2"')
     new_parser.add_argument('--no-sync', help='Deactivate auto sync for this project '
                                               '(it will not be in the sync_project list)')
+    new_parser.add_argument('--filters-list-csv',
+                            type=str,
+                            help='Comma separated names of lists to include '
+                                 'for card scanning (e.g. To Do). Default is all.')
+    new_parser.add_argument('--is-assignee', action='store_true',
+                            help='Download the card if the client owner is the assignee of the card')
     new_parser.set_defaults(func=new_project)
     auth_parser = subparsers.add_parser('authenticate',
                                         help="Setup the authentication against trello. Store the parameters "

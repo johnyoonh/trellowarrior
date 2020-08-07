@@ -69,6 +69,7 @@ for it.
 First go to: https://trello.com/app-key to get your API Key and API Secret.
 
 Then call trellowarrior with the authenticate command :
+
 ```sh
 trellowarrior.py -c path/to/your/configfile authenticate --api-key your_api_key --api-key-secret your_api_secret --trello-name TrelloWarrior --expiration 30days
 ```
@@ -125,16 +126,16 @@ set the configuration file path with `-c` or `--config` argument.
 
 To synchronize trello and task warrior, simply call trellowarrior with the sync command
 
-```sh 
+```sh
 trellowarrior.py sync
 ```
 
 You can also add a list of project(s) to synchronize :
 
-```sh 
+```sh
 trellowarrior.py sync project1 project2
 ```
- 
+
 ### DEFAULT Section
 
 In the `DEFAULT` section, it is mandatory to set your Trello API key and
@@ -142,32 +143,32 @@ token and, at least, one sync project.
 The sync project corresponds to the following sections
 that define the Taskwarrior project and Trello board equivalence.
 
-* `taskwarrior_taskrc_location` Optional. Define where your *taskrc* file is located. Default: `~/.taskrc`
-* `taskwarrior_data_location` Optional. Define where your *task* data dir is located. Default: `~/.task`
+- `taskwarrior_taskrc_location` Optional. Define where your _taskrc_ file is located. Default: `~/.taskrc`
+- `taskwarrior_data_location` Optional. Define where your _task_ data dir is located. Default: `~/.task`
 
-* `trello_api_key` MANDATORY. Your Trello Api Key.
-* `trello_api_secret` MANDATORY. Your Trello Api Secret.
-* `trello_token` MANDATORY. Your Trello Token.
-* `trello_token_secret` MANDATORY. Your Trello Token Secret.
+- `trello_api_key` MANDATORY. Your Trello Api Key.
+- `trello_api_secret` MANDATORY. Your Trello Api Secret.
+- `trello_token` MANDATORY. Your Trello Token.
+- `trello_token_secret` MANDATORY. Your Trello Token Secret.
 
-* `sync_projects` MANDATORY. Define what sections are loaded, separated by spaces.
+- `sync_projects` MANDATORY. Define what sections are loaded, separated by spaces.
 
 ### Project/Board Sections
 
 The Project/Board sections are called from `sync_projects` and define the
 equivalence between Taskwarrior and Trello.
 
-* `tw_project_name` MANDATORY. The name of project in Taskwarrior.
-* `trello_board_name` MANDATORY. The name of Trello Board.
-* `trello_todo_list` Optional. The name of Trello list where new pending tasks are stored. Default: `To Do`
-* `trello_doing_list` Optional. The name of Trello list for active tasks. Default: `Doing`
-* `trello_done_list` Optional. The name of Trello list for done taks. Default: `Done`
-* `tags_color` Optional. Mapping between taskwarrior tags and trello labels. Json encoded list of dict like : `[{"color": "blue", "name": "trellowarrior"}, {"color": "green", "name": "personal"}]`. Cannot have multiple labels with the same name and will remove not mapped ones.
+- `tw_project_name` MANDATORY. The name of project in Taskwarrior.
+- `trello_board_name` MANDATORY. The name of Trello Board.
+- `trello_todo_list` Optional. The name of Trello list where new pending tasks are stored. Default: `To Do`
+- `trello_doing_list` Optional. The name of Trello list for active tasks. Default: `Doing`
+- `trello_done_list` Optional. The name of Trello list for done taks. Default: `Done`
+- `tags_color` Optional. Mapping between taskwarrior tags and trello labels. Json encoded list of dict like : `[{"color": "blue", "name": "trellowarrior"}, {"color": "green", "name": "personal"}]`. Cannot have multiple labels with the same name and will remove not mapped ones.
 
 ## Equivalences
 
 | Taskwarrior         | Trello        |
-|---------------------|---------------|
+| ------------------- | ------------- |
 | UDA: trelloid       | Card ID       |
 | UDA: trellolistname | List Name     |
 | Project             | Board Name    |
@@ -184,10 +185,14 @@ TrelloWarrior does the sync and keeps the Taskwarrior data, because it is
 the last touched.
 
 You can have infinite lists in your Trello, but all of them are considered
-as *pending*. You only can have one *doing* list and one *done* list, but
+as _pending_. You only can have one _doing_ list and one _done_ list, but
 these lists can be configured.
 
 If you have several boards with same name, TrelloWarrior always picks the
 first one.
 
-For now, only syncs *Title/Description*, *Due dates*, *Tags, and *Status*.
+For now, only syncs _Title/Description_, _Due dates_, *Tags, and *Status\*.
+
+### Consequences
+
+The name of the project is essential identifying the cards properly. After cards have been synced they are assigned trelloid, if the subsequent sync shows different project name on Trello, this script will assume that the cards got deleted on the taskwarrior and hence archive the cards too. Trello creates a new board in a personal team if it does not see the specified project in other teams

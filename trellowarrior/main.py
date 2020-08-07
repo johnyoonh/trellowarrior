@@ -46,9 +46,11 @@ class TwProject(object):
 
 
 class TrelloWarrior(object):
-    CONFIG_FILES = ['./trellowarrior.conf',
-                    os.path.join(os.path.expanduser('~'), '.trellowarrior.conf'),
-                    os.path.join(os.path.expanduser('~'), '.config/trellowarrior/trellowarrior.conf')]
+    CONFIG_FILES = [os.path.join(os.path.expanduser('~'), '.trellowarrior.conf'),
+                    os.path.join(os.path.expanduser('~'),
+                                 '.config/trellowarrior/trellowarrior.conf'),
+                    './trellowarrior.conf',
+                    ]
 
     def __init__(self, config_file=None):
         if config_file:
